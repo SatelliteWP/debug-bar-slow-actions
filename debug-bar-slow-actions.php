@@ -26,7 +26,7 @@ class Debug_Bar_Slow_Actions {
 			$this->flow[ current_filter() ] = array(
 				'count' => 0,
 				'stack' => array(),
-				'time' => array(),
+				'time' => 0,
 				'callbacks' => array(),
 			);
 
@@ -34,14 +34,13 @@ class Debug_Bar_Slow_Actions {
 			add_action( current_filter(), array( $this, 'time_stop' ), 999999999 );
 		}
 
-		$count = ++$this->flow[ current_filter() ]['count'];
-		array_push( $this->flow[ current_filter() ]['stack'], array( 'start' => microtime( true ) ) );
+		++$this->flow[ current_filter() ]['count'];
+		array_push( $this->flow[ current_filter() ]['stack'], microtime( true ) );
 	}
 
 	function time_stop( $value = null ) {
 		$time = array_pop( $this->flow[ current_filter() ]['stack'] );
-		$time['stop'] = microtime( true );
-		array_push( $this->flow[ current_filter() ]['time'], $time );
+		$this->flow[ current_filter() ]['time'] += microtime( true ) - $time;
 
 		// Remove time_stop filter from the list
 		remove_action( current_filter(), array( $this, 'time_stop' ), 999999999 );
@@ -65,9 +64,8 @@ class Debug_Bar_Slow_Actions {
 		// we won't get a wp_footer entry in the output.
 		if ( ! empty( $this->flow['wp_footer']['stack'] ) ) {
 			$time = array_pop( $this->flow['wp_footer']['stack'] );
-			if ( $time && empty( $time['stop'] ) ) {
-				$time['stop'] = microtime( true );
-				array_push( $this->flow['wp_footer']['time'], $time );
+			if ( $time ) {
+                $this->flow['wp_footer']['time'] += microtime( true );
 			}
 		}
 
@@ -89,15 +87,20 @@ class Debug_Bar_Slow_Actions {
 		$total_actions_time = 0;
 
 		foreach ( $this->flow as $action => $data ) {
-			$total = 0;
-			foreach ( $data['time'] as $time )
-				$total += ( $time['stop'] - $time['start'] ) * 1000;
+			#$total = 0;
+			#foreach ( $data['time'] as $time )
+			#	$total += ( $time['stop'] - $time['start'] ) * 1000;
+			$total = $data['time'] * 1000;
 
 			$this->flow[ $action ]['total'] = $total;
 			$total_actions_time += $total;
 			$total_actions += $data['count'];
 
 			$this->flow[ $action ]['callbacks_count'] = 0;
+
+			if ( ! isset( $wp_filter[ $action ] ) ) {
+				continue;
+			}
 
 			// Add all filter callbacks.
 			foreach ( $wp_filter[ $action ] as $priority => $callbacks ) {
