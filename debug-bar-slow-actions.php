@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Debug Bar Slow Actions
  * Description: Easily find the slowest actions and filters during a page request.
- * Version: 0.8.2
+ * Version: 0.8.5
  * Author: Konstantin Kovshenin
  * Author URI: http://kovshenin.com
  * License: GPLv2 or later
@@ -42,6 +42,9 @@ class Debug_Bar_Slow_Actions {
 		$time = array_pop( $this->flow[ current_filter() ]['stack'] );
 		$time['stop'] = microtime( true );
 		array_push( $this->flow[ current_filter() ]['time'], $time );
+
+		// Remove time_stop filter from the list
+		remove_action( current_filter(), array( $this, 'time_stop' ), 999999999 );
 
 		// In case this was a filter.
 		return $value;
