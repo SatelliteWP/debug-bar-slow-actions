@@ -87,9 +87,6 @@ class Debug_Bar_Slow_Actions {
 		$total_actions_time = 0;
 
 		foreach ( $this->flow as $action => $data ) {
-			#$total = 0;
-			#foreach ( $data['time'] as $time )
-			#	$total += ( $time['stop'] - $time['start'] ) * 1000;
 			$total = $data['time'] * 1000;
 
 			$this->flow[ $action ]['total'] = $total;
