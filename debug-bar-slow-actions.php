@@ -1,14 +1,14 @@
 <?php
 /**
- * Plugin Name: Debug Bar Slow Actions
+ * Plugin Name: Slow Actions
  * Description: Easily find the slowest actions and filters during a page request.
  * Version: 0.8.5
- * Author: Konstantin Kovshenin
- * Author URI: http://kovshenin.com
+ * Author: SatelliteWP
+ * Author URI: https://www.satellitewp.com
  * License: GPLv2 or later
  */
 
-class Debug_Bar_Slow_Actions {
+class Slow_Actions {
 	public $start;
 	public $flow;
 
@@ -28,6 +28,7 @@ class Debug_Bar_Slow_Actions {
 				'stack' => array(),
 				'time' => 0,
 				'callbacks' => array(),
+				#'subtimes' => array(),
 			);
 
 			// @todo: add support for nesting filters, see #17817
@@ -36,11 +37,13 @@ class Debug_Bar_Slow_Actions {
 
 		++$this->flow[ current_filter() ]['count'];
 		array_push( $this->flow[ current_filter() ]['stack'], microtime( true ) );
+		#array_push( $this->flow[ current_filter() ]['subtimes'], microtime( true ) );
 	}
 
 	function time_stop( $value = null ) {
 		$time = array_pop( $this->flow[ current_filter() ]['stack'] );
 		$this->flow[ current_filter() ]['time'] += microtime( true ) - $time;
+		#$this->flow[ current_filter() ]['subtimes'][] = microtime( true ) - $time;
 
 		// Remove time_stop filter from the list
 		remove_action( current_filter(), array( $this, 'time_stop' ), 999999999 );
@@ -79,6 +82,28 @@ class Debug_Bar_Slow_Actions {
     	return ( $a['total'] > $b['total'] ) ? -1 : 1;
 	}
 
+	public static function get_callback_to_text( $callback ) {
+		$result = null;
+
+		if ( is_array( $callback['function'] ) && count( $callback['function'] ) == 2 ) {
+			list( $object_or_class, $method ) = $callback['function'];
+			if ( is_object( $object_or_class ) ) {
+				$object_or_class = get_class( $object_or_class );
+			}
+
+			$result = sprintf( '%s::%s', $object_or_class, $method );
+		} 
+		elseif ( is_object( $callback['function'] ) ) {
+			// Probably an anonymous function.
+			$result = get_class( $callback['function'] );
+		} 
+		else {
+			$result = $callback['function'];
+		}
+
+		return $result;
+	}
+
 	function output() {
 		global $wp_filter;
 
@@ -99,29 +124,31 @@ class Debug_Bar_Slow_Actions {
 				continue;
 			}
 
+			#var_dump( $action, $wp_filter[ $action ]->timings );exit;
 			// Add all filter callbacks.
 			foreach ( $wp_filter[ $action ] as $priority => $callbacks ) {
 				if ( ! isset( $this->flow[ $action ]['callbacks'][ $priority ] ) ) {
 					$this->flow[ $action ]['callbacks'][ $priority ] = array();
 				}
 
-				foreach ( $callbacks as $callback ) {
-					if ( is_array( $callback['function'] ) && count( $callback['function'] ) == 2 ) {
-						list( $object_or_class, $method ) = $callback['function'];
-						if ( is_object( $object_or_class ) ) {
-							$object_or_class = get_class( $object_or_class );
-						}
-
-						$this->flow[ $action ]['callbacks'][ $priority ][] = sprintf( '%s::%s', $object_or_class, $method );
-					} elseif ( is_object( $callback['function'] ) ) {
-						// Probably an anonymous function.
-						$this->flow[ $action ]['callbacks'][ $priority ][] = get_class( $callback['function'] );
-					} else {
-						$this->flow[ $action ]['callbacks'][ $priority ][] = $callback['function'];
+				#if ( 'template_redirect' == $action ) { var_dump($wp_filter[ $action ]->timings);exit; }
+				foreach ( $callbacks as $key => $callback ) {
+					$callback_text = $this->get_callback_to_text( $callback );
+					#$this->flow[ $action ]['callbacks'][ $priority ][] = $callback_text;
+					
+					$timing = null;
+					if ( isset( $wp_filter[ $action ]->timings[$callback_text . '_' . $priority] ) ) {
+						$timing = $wp_filter[ $action ]->timings[$callback_text . '_' . $priority];
 					}
+					$this->flow[ $action ]['callbacks'][ $priority ][] = [ 
+						'callback' => $callback_text,
+						'timing' => $timing
+					];
 
 					$this->flow[ $action ]['callbacks_count']++;
 				}
+
+				#var_dump($this->flow[ $action ]['callbacks'][ $priority ]);exit;
 			}
 		}
 
@@ -141,8 +168,22 @@ class Debug_Bar_Slow_Actions {
 
 			$callbacks_output = '<ol class="dbsa-callbacks">';
 			foreach ( $data['callbacks'] as $priority => $callbacks ) {
+				$i = 1;
 				foreach ( $callbacks as $callback ) {
-					$callbacks_output .= sprintf( '<li value="%d">%s</li>', $priority, $callback );
+					#$callbacks_output .= sprintf( '<li value="%d">%s [%d]</li>', $priority, $callback, $priority );
+					$timing =  $callback['timing'];
+					$time = -1;
+					if ( null != $timing && isset( $timing['time'] ) ) {
+						$time = $timing['time'];
+					}
+					$callbacks_output .= sprintf( '<li value="%d">%s [%d] [%.2f ms]</li>', $priority, $callback['callback'], $priority, round( $time, 2 ) );
+
+					#$callbacks_output .= sprintf( '<li value="%d">%s</li>', $priority, $callback['callback'], $priority, round( $time, 2 ) );
+
+					#$time = 0;
+					#$time = ( $data['stack'][$i] * 1000 )- ( $data['stack'][$i-1] * 1000 );
+					#$callbacks_output .= sprintf( '<li value="%d">%s (%.2fms)</li>', $priority, $callback, $time );
+					#$i++;
 				}
 			}
 			$callbacks_output .= '</ol>';
@@ -234,5 +275,12 @@ EOD;
 
 		return $output;
 	}
+
+	protected $filter_times = [];
+
+	public function set_time( $filter_name, $callback, $priority, $time ) {
+		$this->filter_times[$filter_id] = $time;
+	}
 }
-new Debug_Bar_Slow_Actions;
+
+$swp_sa = new Slow_Actions();
